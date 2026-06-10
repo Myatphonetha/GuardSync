@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "GuardSync",
+    "slug": "guardsync",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "guardsync",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f5f5f0"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.guardsync.app"
+    },
+    "android": {
+      "package": "com.guardsync.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-dev-client",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "react-native-ble-plx"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "eb2f02e5-1ef2-4468-a542-1b8462d3ca77"
+      }
+    },
+    "owner": "myatphone"
+  }
+}

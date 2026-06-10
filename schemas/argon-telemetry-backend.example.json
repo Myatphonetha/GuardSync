@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "source": "argon_nordic_uart",
+  "device_id": "AA:BB:CC:DD:EE:FF",
+  "device_name": "Argon",
+  "device_uptime_ms": 123456,
+  "metric_v1": 42,
+  "metric_v2": 156,
+  "raw_line": "123456, 42, 156",
+  "received_at_ms": 1735689600000
+}
