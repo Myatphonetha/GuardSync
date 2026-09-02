@@ -1,4 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getRecentTelemetrySamples } from './recentTelemetryBuffer';
+import { detectUsageMode } from './usageModeDetect';
+import {
+  getModeSource,
+  getOrCreateSessionId,
+  getUsageMode,
+  isUsageMode,
+  isModeSource,
+  setLastDetectedMode,
+  type ModeSource,
+  type UsageMode,
+} from './usageMode';
 
 /**
  * Local + backend contract for Argon Nordic UART telemetry (`millis, v1, v2`).
@@ -23,6 +35,14 @@ export type ArgonTelemetryRecord = {
   receivedAtMs: number;
   deviceId: string;
   deviceName: string;
+  /** Wear / activity context: training | game | sleep */
+  usageMode: UsageMode;
+  /** Rotates when the athlete changes usage mode */
+  sessionId: string;
+  /** Rule-based (or future ML) guess at sample time */
+  detectedMode: UsageMode | null;
+  /** Whether usageMode was set by athlete or auto-confirm */
+  modeSource: ModeSource;
 };
 
 /** Shape you can POST to your API (stable field names for backend work). */
@@ -38,7 +58,24 @@ export type ArgonBackendPayload = {
   /** Original UART line from firmware */
   raw_line: string;
   received_at_ms: number;
+  usage_mode: UsageMode;
+  session_id: string;
+  detected_mode: UsageMode | null;
+  mode_source: ModeSource;
 };
+
+function normalizeUsageFields(o: Record<string, unknown>): {
+  usageMode: UsageMode;
+  sessionId: string;
+  detectedMode: UsageMode | null;
+  modeSource: ModeSource;
+} {
+  const usageMode = isUsageMode(o.usageMode) ? o.usageMode : 'training';
+  const sessionId = typeof o.sessionId === 'string' && o.sessionId.length > 0 ? o.sessionId : '';
+  const detectedMode = isUsageMode(o.detectedMode) ? o.detectedMode : null;
+  const modeSource = isModeSource(o.modeSource) ? o.modeSource : 'manual';
+  return { usageMode, sessionId, detectedMode, modeSource };
+}
 
 function parseLegacyStored(json: unknown): ArgonTelemetryRecord | null {
   if (!json || typeof json !== 'object') return null;
@@ -67,6 +104,7 @@ function parseLegacyStored(json: unknown): ArgonTelemetryRecord | null {
   if (Number.isNaN(millis)) return null;
   const resolvedHeadAcceleration = Number.isNaN(headAcceleration) ? (Number.isNaN(v1) ? 0 : v1) : headAcceleration;
   const resolvedHeartRate = Number.isNaN(heartRate) ? (Number.isNaN(v2) ? 0 : v2) : heartRate;
+  const { usageMode, sessionId, detectedMode, modeSource } = normalizeUsageFields(o);
   return {
     schemaVersion: 1,
     millis,
@@ -80,6 +118,10 @@ function parseLegacyStored(json: unknown): ArgonTelemetryRecord | null {
     receivedAtMs,
     deviceId,
     deviceName,
+    usageMode,
+    sessionId,
+    detectedMode,
+    modeSource,
   };
 }
 
@@ -94,6 +136,10 @@ export function toBackendPayload(record: ArgonTelemetryRecord): ArgonBackendPayl
     metric_v2: record.heartRate,
     raw_line: record.rawLine,
     received_at_ms: record.receivedAtMs,
+    usage_mode: record.usageMode ?? 'training',
+    session_id: record.sessionId ?? '',
+    detected_mode: record.detectedMode ?? null,
+    mode_source: record.modeSource ?? 'manual',
   };
 }
 
@@ -125,6 +171,11 @@ export async function loadLatestArgonTelemetry(): Promise<ArgonTelemetryRecord |
       if (typeof o.biteForce !== 'number') {
         o.biteForce = 150;
       }
+      const { usageMode, sessionId, detectedMode, modeSource } = normalizeUsageFields(o);
+      o.usageMode = usageMode;
+      o.sessionId = sessionId;
+      o.detectedMode = detectedMode;
+      o.modeSource = modeSource;
       return o as ArgonTelemetryRecord;
     }
     return parseLegacyStored(j);
@@ -164,6 +215,11 @@ async function readOutbox(): Promise<ArgonTelemetryRecord[]> {
           if (typeof o.biteForce !== 'number') {
             o.biteForce = 150;
           }
+          const { usageMode, sessionId, detectedMode, modeSource } = normalizeUsageFields(o);
+          o.usageMode = usageMode;
+          o.sessionId = sessionId;
+          o.detectedMode = detectedMode;
+          o.modeSource = modeSource;
           return o as ArgonTelemetryRecord;
         }
         return parseLegacyStored(item);
@@ -172,6 +228,28 @@ async function readOutbox(): Promise<ArgonTelemetryRecord[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Use the athlete-selected mode. Detection is stored for History prompts only — never auto-switches.
+ */
+async function resolveModeForSample(): Promise<{
+  usageMode: UsageMode;
+  sessionId: string;
+  modeSource: ModeSource;
+  detectedMode: UsageMode;
+}> {
+  const detection = detectUsageMode(getRecentTelemetrySamples());
+  const detectedMode = detection.mode;
+  await setLastDetectedMode(detectedMode);
+
+  const [usageMode, sessionId, modeSource] = await Promise.all([
+    getUsageMode(),
+    getOrCreateSessionId(),
+    getModeSource(),
+  ]);
+
+  return { usageMode, sessionId, modeSource, detectedMode };
 }
 
 /**
@@ -191,6 +269,7 @@ export async function persistArgonTelemetryRecord(input: {
   deviceId: string;
   deviceName: string;
 }): Promise<ArgonTelemetryRecord> {
+  const { usageMode, sessionId, modeSource, detectedMode } = await resolveModeForSample();
   const record: ArgonTelemetryRecord = {
     schemaVersion: 1,
     millis: input.parsed.millis,
@@ -204,6 +283,10 @@ export async function persistArgonTelemetryRecord(input: {
     receivedAtMs: Date.now(),
     deviceId: input.deviceId,
     deviceName: input.deviceName,
+    usageMode,
+    sessionId,
+    detectedMode,
+    modeSource,
   };
 
   await AsyncStorage.setItem(STORAGE_KEY_LATEST, JSON.stringify(record));
@@ -228,5 +311,47 @@ export async function removeFromOutboxUploaded(idsOrPredicate: {
 
 export async function loadOutboxForSync(): Promise<ArgonTelemetryRecord[]> {
   return readOutbox();
+}
+
+/** Re-label recent local samples after the athlete confirms a mode on History. */
+export async function retagLocalRecordsSince(
+  sinceMs: number,
+  mode: UsageMode,
+  sessionId: string,
+): Promise<number> {
+  let count = 0;
+
+  const latest = await loadLatestArgonTelemetry();
+  if (latest && latest.receivedAtMs >= sinceMs) {
+    const updated: ArgonTelemetryRecord = {
+      ...latest,
+      usageMode: mode,
+      sessionId,
+      modeSource: 'manual',
+      detectedMode: mode,
+    };
+    await AsyncStorage.setItem(STORAGE_KEY_LATEST, JSON.stringify(updated));
+    count += 1;
+  }
+
+  const outbox = await readOutbox();
+  let changed = false;
+  const next = outbox.map((r) => {
+    if (r.receivedAtMs < sinceMs) return r;
+    changed = true;
+    count += 1;
+    return {
+      ...r,
+      usageMode: mode,
+      sessionId,
+      modeSource: 'manual' as const,
+      detectedMode: mode,
+    };
+  });
+  if (changed) {
+    await AsyncStorage.setItem(STORAGE_KEY_OUTBOX, JSON.stringify(next));
+  }
+
+  return count;
 }
 

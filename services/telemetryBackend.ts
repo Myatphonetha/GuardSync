@@ -30,6 +30,10 @@ export async function postArgonTelemetry(payload: ArgonBackendPayload): Promise<
     metric_v2: payload.metric_v2,
     csv_raw: payload.raw_line,
     received_at_ms: payload.received_at_ms,
+    usage_mode: payload.usage_mode,
+    session_id: payload.session_id,
+    detected_mode: payload.detected_mode,
+    mode_source: payload.mode_source,
   });
 
   if (error) {

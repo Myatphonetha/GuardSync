@@ -13,14 +13,25 @@ import { router, useFocusEffect } from 'expo-router';
 import { DashboardBottomNav } from '../components/DashboardBottomNav';
 import { HistoryBarChart } from '../components/HistoryBarChart';
 import { HistoryChartCard } from '../components/HistoryChartCard';
+import { HistoryActivityStrip } from '../components/HistoryActivityStrip';
+import { HistoryModePrompt } from '../components/HistoryModePrompt';
 import { TIME_RANGES, chartStats, countCritical } from '../lib/historyChartData';
 import {
+  analyzeHistoryForModeSuggestion,
+  type HistoryModeSuggestion,
+} from '../lib/historyModeDetect';
+import {
+  countByUsageMode,
+  recordsToActivitySegments,
   recordsToBiteForceChart,
   recordsToHeadAccelerationChart,
   recordsToHeartRateChart,
   recordsToSpO2Chart,
   recordsToTemperatureChart,
 } from '../lib/historyFromRecords';
+import { retagLocalRecordsSince } from '../lib/argonTelemetry';
+import { getUsageMode, setLastDetectedMode, setUsageMode } from '../lib/usageMode';
+import type { UsageMode } from '../lib/usageMode';
 import { theme } from '../theme';
 import { fetchTelemetryHistory, syncLocalOutboxToSupabase } from '../services/telemetryHistory';
 
@@ -33,6 +44,11 @@ export default function HistoryScreen() {
   const [syncedCount, setSyncedCount] = useState(0);
   const [sampleCount, setSampleCount] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [modeCounts, setModeCounts] = useState<Partial<Record<UsageMode, number>>>({});
+  const [activitySegments, setActivitySegments] = useState<
+    ReturnType<typeof recordsToActivitySegments>
+  >([]);
+  const [timelineEnd, setTimelineEnd] = useState('0s');
 
   const [heartRateData, setHeartRateData] = useState<ReturnType<typeof recordsToHeartRateChart>>([]);
   const [spO2Data, setSpO2Data] = useState<ReturnType<typeof recordsToSpO2Chart>>([]);
@@ -44,12 +60,20 @@ export default function HistoryScreen() {
   );
   const [biteForceData, setBiteForceData] = useState<ReturnType<typeof recordsToBiteForceChart>>([]);
 
-  const loadHistory = useCallback(async (minutes: number) => {
+  const [modeSuggestion, setModeSuggestion] = useState<HistoryModeSuggestion | null>(null);
+  const [modePromptDismissed, setModePromptDismissed] = useState(false);
+  const [confirmingMode, setConfirmingMode] = useState(false);
+
+  const loadHistory = useCallback(async (minutes: number, skipModePrompt = false) => {
     setLoading(true);
     setLoadError(null);
     try {
-      const { records, fromSupabase, error } = await fetchTelemetryHistory(minutes);
+      const { records, fromSupabase, error } = await fetchTelemetryHistory(minutes, 'all');
       setSampleCount(records.length);
+      setModeCounts(countByUsageMode(records));
+      setActivitySegments(recordsToActivitySegments(records));
+      const lastChart = recordsToHeartRateChart(records);
+      setTimelineEnd(lastChart.length > 0 ? lastChart[lastChart.length - 1].time : '0s');
 
       const uploaded = await syncLocalOutboxToSupabase();
       setSyncedCount(uploaded);
@@ -65,26 +89,61 @@ export default function HistoryScreen() {
       setHeadAccelData(recordsToHeadAccelerationChart(records));
       setBiteForceData(recordsToBiteForceChart(records));
 
+      if (!skipModePrompt && !modePromptDismissed && records.length > 0) {
+        const currentMode = await getUsageMode();
+        setModeSuggestion(analyzeHistoryForModeSuggestion(records, currentMode));
+      } else if (skipModePrompt) {
+        setModeSuggestion(null);
+      }
+
       if (__DEV__ && records.length > 0) {
         console.log(
-          `[history] ${records.length} samples (${fromSupabase} from Supabase, ${uploaded} synced from device)`,
+          `[history] ${records.length} samples (${fromSupabase} from Supabase, ${uploaded} synced)`,
         );
       }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
       setSampleCount(0);
+      setModeCounts({});
+      setActivitySegments([]);
+      setTimelineEnd('0s');
       setHeartRateData([]);
       setSpO2Data([]);
       setTemperatureData([]);
       setHeadAccelData([]);
       setBiteForceData([]);
+      setModeSuggestion(null);
     } finally {
       setLoading(false);
     }
+  }, [modePromptDismissed]);
+
+  const handleConfirmModeSwitch = useCallback(async () => {
+    if (!modeSuggestion) return;
+    setConfirmingMode(true);
+    try {
+      const { sessionId } = await setUsageMode(modeSuggestion.suggestedMode, 'manual');
+      await setLastDetectedMode(modeSuggestion.suggestedMode);
+      await retagLocalRecordsSince(
+        modeSuggestion.sinceMs,
+        modeSuggestion.suggestedMode,
+        sessionId,
+      );
+      setModeSuggestion(null);
+      await loadHistory(selectedRange, true);
+    } finally {
+      setConfirmingMode(false);
+    }
+  }, [loadHistory, modeSuggestion, selectedRange]);
+
+  const handleDismissModePrompt = useCallback(() => {
+    setModePromptDismissed(true);
+    setModeSuggestion(null);
   }, []);
 
   useFocusEffect(
     useCallback(() => {
+      setModePromptDismissed(false);
       void loadHistory(selectedRange);
     }, [loadHistory, selectedRange]),
   );
@@ -120,7 +179,7 @@ export default function HistoryScreen() {
             </Pressable>
             <View style={styles.headerText}>
               <Text style={styles.title}>Performance History</Text>
-              <Text style={styles.subtitle}>Track your metrics over time</Text>
+              <Text style={styles.subtitle}>Metrics below share one timeline</Text>
             </View>
             {criticalCount > 0 && (
               <View style={styles.alertBadge}>
@@ -140,6 +199,7 @@ export default function HistoryScreen() {
                   key={range.value}
                   style={[styles.rangeBtn, active && styles.rangeBtnActive]}
                   onPress={() => {
+                    setModePromptDismissed(false);
                     setSelectedRange(range.value);
                     void loadHistory(range.value);
                   }}
@@ -159,6 +219,15 @@ export default function HistoryScreen() {
 
           {loadError ? <Text style={styles.warnText}>{loadError}</Text> : null}
 
+          {!loading && modeSuggestion ? (
+            <HistoryModePrompt
+              suggestion={modeSuggestion}
+              confirming={confirmingMode}
+              onConfirm={() => void handleConfirmModeSwitch()}
+              onDismiss={handleDismissModePrompt}
+            />
+          ) : null}
+
           {syncedCount > 0 ? (
             <Text style={styles.metaText}>Synced {syncedCount} sample(s) from this device to the cloud.</Text>
           ) : null}
@@ -168,16 +237,21 @@ export default function HistoryScreen() {
               <Text style={styles.emptyTitle}>No samples yet</Text>
               <Text style={styles.emptyBody}>
                 1. Sign in{'\n'}
-                2. Open Dashboard with Argon connected (Status: Live){'\n'}
+                2. Keep Argon connected on Dashboard (Status: Live){'\n'}
                 3. Wait 30–60 seconds, then open History{'\n\n'}
-                If you already collected data, try the 5min tab — we show your most recent samples even if
-                they are slightly older than 1 minute.
+                Activity is shown in the strip above the charts. Bar colors stay green (normal) or red (critical).
               </Text>
             </View>
           ) : null}
 
           {!empty && !loading ? (
             <>
+              <HistoryActivityStrip
+                segments={activitySegments}
+                counts={modeCounts}
+                endTimeLabel={timelineEnd}
+              />
+
               <HistoryChartCard
                 title="Heart Rate"
                 subtitle={`Avg: ${hrStats.avg} BPM • Min: ${hrStats.min} • Max: ${hrStats.max}`}
@@ -245,7 +319,7 @@ export default function HistoryScreen() {
               </HistoryChartCard>
 
               <Text style={styles.metaText}>
-                {sampleCount} sample(s) shown
+                {sampleCount} sample(s) on one timeline from 0s
                 {sampleCount < 3 ? ' — collect more on Dashboard for fuller charts' : ''}
               </Text>
             </>

@@ -9,6 +9,7 @@ import {
   toBackendPayload,
 } from '../lib/argonTelemetry';
 import { ensureBlePermissions } from '../lib/blePermissions';
+import { pushRecentTelemetrySample } from '../lib/recentTelemetryBuffer';
 import { postArgonTelemetry } from '../services/telemetryBackend';
 
 const K_CONNECTED = 'guardsync_bt_connected';
@@ -106,6 +107,13 @@ export function useArgonLiveTelemetry(): LiveTelemetryState {
             setStreamLive(true);
             setStreamError(null);
             applyRecord(parsed);
+
+            pushRecentTelemetrySample({
+              headAcceleration: parsed.headAcceleration,
+              heartRate: parsed.heartRate,
+              biteForce: parsed.biteForce,
+              receivedAtMs: Date.now(),
+            });
 
             const now = Date.now();
             if (now - lastPersistMs.current >= PERSIST_MS) {

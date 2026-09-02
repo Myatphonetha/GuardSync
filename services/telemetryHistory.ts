@@ -6,8 +6,11 @@ import {
   toBackendPayload,
 } from '../lib/argonTelemetry';
 import { parseArgonUartLine } from '../lib/argonNordicUart';
+import { isUsageMode, isModeSource, type UsageMode } from '../lib/usageMode';
 import { supabase } from '../lib/supabase';
 import { postArgonTelemetry } from './telemetryBackend';
+
+export type HistoryModeFilter = 'all' | UsageMode;
 
 type TelemetryRow = {
   id: number;
@@ -18,6 +21,10 @@ type TelemetryRow = {
   metric_v2: number;
   csv_raw: string;
   received_at_ms: number;
+  usage_mode?: string | null;
+  session_id?: string | null;
+  detected_mode?: string | null;
+  mode_source?: string | null;
 };
 
 /** ~1 sample every 2s on Dashboard — fetch enough bars for short windows. */
@@ -28,6 +35,11 @@ const SAMPLE_LIMIT: Record<number, number> = {
 };
 
 function rowToRecord(row: TelemetryRow): ArgonTelemetryRecord | null {
+  const usageMode = isUsageMode(row.usage_mode) ? row.usage_mode : 'training';
+  const sessionId = typeof row.session_id === 'string' ? row.session_id : '';
+  const detectedMode = isUsageMode(row.detected_mode) ? row.detected_mode : null;
+  const modeSource = isModeSource(row.mode_source) ? row.mode_source : 'manual';
+
   const parsed = parseArgonUartLine(row.csv_raw);
   if (parsed) {
     return {
@@ -43,6 +55,10 @@ function rowToRecord(row: TelemetryRow): ArgonTelemetryRecord | null {
       receivedAtMs: row.received_at_ms,
       deviceId: row.device_id,
       deviceName: row.device_name,
+      usageMode,
+      sessionId,
+      detectedMode,
+      modeSource,
     };
   }
 
@@ -59,6 +75,10 @@ function rowToRecord(row: TelemetryRow): ArgonTelemetryRecord | null {
     receivedAtMs: row.received_at_ms,
     deviceId: row.device_id,
     deviceName: row.device_name,
+    usageMode,
+    sessionId,
+    detectedMode,
+    modeSource,
   };
 }
 
@@ -74,6 +94,11 @@ function pickByTimeOrRecent(records: ArgonTelemetryRecord[], since: number, limi
   const inRange = records.filter((r) => r.receivedAtMs >= since);
   if (inRange.length >= 2) return inRange;
   return records.slice(-limit);
+}
+
+function filterByMode(records: ArgonTelemetryRecord[], mode: HistoryModeFilter): ArgonTelemetryRecord[] {
+  if (mode === 'all') return records;
+  return records.filter((r) => (r.usageMode ?? 'training') === mode);
 }
 
 /**
@@ -97,7 +122,11 @@ export async function syncLocalOutboxToSupabase(): Promise<number> {
   return uploaded.length;
 }
 
-async function fetchSupabaseRows(since: number, limit: number): Promise<{
+async function fetchSupabaseRows(
+  since: number,
+  limit: number,
+  mode: HistoryModeFilter,
+): Promise<{
   rows: TelemetryRow[];
   error: string | null;
 }> {
@@ -106,25 +135,36 @@ async function fetchSupabaseRows(since: number, limit: number): Promise<{
     return { rows: [], error: 'Sign in to load cloud history.' };
   }
 
-  const { data: inRange, error: rangeError } = await supabase
+  const selectCols =
+    'id, device_id, device_name, device_uptime_ms, metric_v1, metric_v2, csv_raw, received_at_ms, usage_mode, session_id, detected_mode, mode_source';
+
+  let rangeQuery = supabase
     .from('argon_telemetry_samples')
-    .select(
-      'id, device_id, device_name, device_uptime_ms, metric_v1, metric_v2, csv_raw, received_at_ms',
-    )
+    .select(selectCols)
     .gte('received_at_ms', since)
     .order('received_at_ms', { ascending: true });
+
+  if (mode !== 'all') {
+    rangeQuery = rangeQuery.eq('usage_mode', mode);
+  }
+
+  const { data: inRange, error: rangeError } = await rangeQuery;
 
   if (!rangeError && inRange && inRange.length >= 2) {
     return { rows: inRange as TelemetryRow[], error: null };
   }
 
-  const { data: recent, error: recentError } = await supabase
+  let recentQuery = supabase
     .from('argon_telemetry_samples')
-    .select(
-      'id, device_id, device_name, device_uptime_ms, metric_v1, metric_v2, csv_raw, received_at_ms',
-    )
+    .select(selectCols)
     .order('received_at_ms', { ascending: false })
     .limit(limit);
+
+  if (mode !== 'all') {
+    recentQuery = recentQuery.eq('usage_mode', mode);
+  }
+
+  const { data: recent, error: recentError } = await recentQuery;
 
   if (recentError) {
     return { rows: [], error: recentError.message };
@@ -137,7 +177,10 @@ async function fetchSupabaseRows(since: number, limit: number): Promise<{
 /**
  * Load telemetry for charts: local outbox + latest snapshot + Supabase (time window or latest N).
  */
-export async function fetchTelemetryHistory(minutes: number): Promise<{
+export async function fetchTelemetryHistory(
+  minutes: number,
+  mode: HistoryModeFilter = 'all',
+): Promise<{
   records: ArgonTelemetryRecord[];
   fromSupabase: number;
   fromLocal: number;
@@ -154,13 +197,13 @@ export async function fetchTelemetryHistory(minutes: number): Promise<{
   const latest = await loadLatestArgonTelemetry();
   if (latest) merged.push(latest);
 
-  const { rows, error } = await fetchSupabaseRows(since, limit);
+  const { rows, error } = await fetchSupabaseRows(since, limit, mode);
   for (const row of rows) {
     const record = rowToRecord(row);
     if (record) merged.push(record);
   }
 
-  const records = dedupeRecords(merged);
+  const records = filterByMode(dedupeRecords(merged), mode);
 
   return {
     records,

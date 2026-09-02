@@ -9,7 +9,7 @@ export default function CalibrationFlowScreen() {
 
   const next = () => {
     if (step >= steps.length - 1) {
-      router.replace('/dashboard');
+      router.replace('/usage-mode');
       return;
     }
     setStep((s) => s + 1);

@@ -12,6 +12,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Device, State } from 'react-native-ble-plx';
 import { router } from 'expo-router';
+import { safeGoBack } from '../lib/safeBack';
 import { bleManager } from '../lib/bleManager';
 import { ensureBlePermissions } from '../lib/blePermissions';
 import {
@@ -186,7 +187,7 @@ export default function OnboardingScreen() {
 
   return (
     <View style={styles.root}>
-      <Pressable style={styles.back} onPress={() => router.back()}>
+      <Pressable style={styles.back} onPress={() => safeGoBack('/profile')}>
         <Text style={styles.backText}>←</Text>
       </Pressable>
 

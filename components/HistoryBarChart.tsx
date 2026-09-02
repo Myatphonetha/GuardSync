@@ -9,6 +9,7 @@ type Props = {
   yMin: number;
   yMax: number;
   threshold?: number;
+  /** Fallback when usageMode is missing on a point */
   barColor: string;
   yTicks?: number[];
 };

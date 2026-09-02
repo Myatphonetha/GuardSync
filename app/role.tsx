@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { safeGoBack } from '../lib/safeBack';
 import { theme } from '../theme';
 
 const roles = [
@@ -39,7 +40,7 @@ export default function RoleSelectionScreen() {
 
   return (
     <View style={styles.root}>
-      <Pressable style={styles.back} onPress={() => router.back()}>
+      <Pressable style={styles.back} onPress={() => safeGoBack('/')}>
         <Text style={styles.backText}>←</Text>
       </Pressable>
 

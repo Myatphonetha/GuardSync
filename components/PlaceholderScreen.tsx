@@ -1,19 +1,22 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, type Href } from 'expo-router';
+import { safeGoBack } from '../lib/safeBack';
 import { theme } from '../theme';
 
 type NavAction =
   | { label: string; href: Href }
-  | { label: string; back: true };
+  | { label: string; back: true; backFallback?: Href };
 
 type Props = {
   title: string;
   subtitle?: string;
+  /** Where to go when back is pressed but the stack is empty (e.g. after router.replace). */
+  backFallback?: Href;
   actions?: NavAction[];
   children?: React.ReactNode;
 };
 
-export function PlaceholderScreen({ title, subtitle, actions, children }: Props) {
+export function PlaceholderScreen({ title, subtitle, backFallback = '/role', actions, children }: Props) {
   return (
     <ScrollView
       style={styles.scroll}
@@ -29,7 +32,7 @@ export function PlaceholderScreen({ title, subtitle, actions, children }: Props)
             key={i}
             style={({ pressed }) => [styles.btn, pressed && styles.btnPressed]}
             onPress={() => {
-              if ('back' in a && a.back) router.back();
+              if ('back' in a && a.back) safeGoBack(a.backFallback ?? backFallback);
               else if ('href' in a) router.push(a.href);
             }}
           >

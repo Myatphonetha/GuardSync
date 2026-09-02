@@ -1,7 +1,16 @@
+import type { UsageMode } from './usageMode';
+
 export type ChartPoint = {
   time: string;
   value: number;
   critical: boolean;
+};
+
+/** Colors for the activity strip only (not measurement bars). */
+export const MODE_STRIP_COLORS: Record<UsageMode, string> = {
+  training: '#1D4E3E',
+  game: '#FFA726',
+  sleep: '#5B7DB1',
 };
 
 export const TIME_RANGES = [

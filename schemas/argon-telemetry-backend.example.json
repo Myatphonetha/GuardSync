@@ -7,5 +7,9 @@
   "metric_v1": 42,
   "metric_v2": 156,
   "raw_line": "123456, 42, 156",
-  "received_at_ms": 1735689600000
+  "received_at_ms": 1735689600000,
+  "usage_mode": "training",
+  "session_id": "sess_example123_abcd",
+  "detected_mode": "game",
+  "mode_source": "auto"
 }
