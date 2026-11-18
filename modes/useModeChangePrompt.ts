@@ -1,5 +1,5 @@
 /**
- * While Argon is connected, periodically checks live vitals and asks
+ * While the mouthguard is connected, periodically checks live vitals and asks
  * "switch to Game?" — never auto-switches.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';

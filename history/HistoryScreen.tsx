@@ -126,7 +126,7 @@ export default function HistoryScreen() {
               <Text style={styles.emptyTitle}>No samples yet</Text>
               <Text style={styles.emptyBody}>
                 1. Sign in{'\n'}
-                2. Keep Argon connected on Dashboard (Status: Live){'\n'}
+                2. Keep the mouthguard connected on Dashboard (Status: Live){'\n'}
                 3. Wait 30–60 seconds, then open History{'\n\n'}
                 Activity is shown in the strip above the charts. Bar colors stay green (normal) or red (critical).
               </Text>
@@ -154,7 +154,14 @@ export default function HistoryScreen() {
                 />
               </HistoryChartCard>
 
-              <HistoryChartCard title="Blood Oxygen (SpO2)" subtitle={`Avg: ${spO2Stats.avg}%`}>
+              <HistoryChartCard
+                title="Blood Oxygen (SpO2)"
+                subtitle={
+                  spO2Data.length === 0
+                    ? 'This mouthguard does not send SpO2'
+                    : `Avg: ${spO2Stats.avg}%`
+                }
+              >
                 <HistoryBarChart
                   data={spO2Data}
                   yMin={85}

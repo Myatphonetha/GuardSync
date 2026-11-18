@@ -1,3 +1,6 @@
+/**
+ * After calibration: athlete picks Training, Game, or Sleep for this session.
+ */
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -9,7 +12,7 @@ import {
   USAGE_MODE_SUBTITLES,
   USAGE_MODES,
   type UsageMode,
-} from '../lib/usageMode';
+} from '../modes/storage';
 import { theme } from '../theme';
 
 const MODE_ICONS: Record<UsageMode, keyof typeof MaterialCommunityIcons.glyphMap> = {
@@ -38,7 +41,7 @@ export default function UsageModeScreen() {
     <View style={styles.root}>
       <Text style={styles.title}>What are you doing today?</Text>
       <Text style={styles.sub}>
-        Argon is connected. After calibration, pick an activity so metrics and alerts match your session.
+        The mouthguard is paired. Pick an activity so metrics and alerts match your session.
       </Text>
 
       <View style={styles.options}>

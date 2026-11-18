@@ -1,3 +1,6 @@
+/**
+ * Sign-up / sign-in / session helpers for the login screen.
+ */
 import { supabase } from '../lib/supabase';
 
 export async function signUpWithEmail(email: string, password: string): Promise<void> {

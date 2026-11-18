@@ -1,7 +1,10 @@
+/**
+ * Thin colored bar above History charts showing Training / Game / Sleep over time.
+ */
 import { StyleSheet, Text, View } from 'react-native';
-import type { ActivitySegment } from '../lib/historyFromRecords';
-import { MODE_STRIP_COLORS } from '../lib/historyChartData';
-import { USAGE_MODE_LABELS, USAGE_MODES, type UsageMode } from '../lib/usageMode';
+import type { ActivitySegment } from '../history/chartTransforms';
+import { MODE_STRIP_COLORS } from '../history/chartConfig';
+import { USAGE_MODE_LABELS, USAGE_MODES, type UsageMode } from '../modes/storage';
 import { theme } from '../theme';
 
 type Props = {

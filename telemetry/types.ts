@@ -1,5 +1,5 @@
 /**
- * One saved Argon sample on the phone, and the JSON shape we POST to Supabase.
+ * One saved mouthguard sample on the phone, and the JSON shape we POST to Supabase.
  * Field names on the backend stay snake_case so the SQL table can stay stable.
  */
 import type { ModeSource, UsageMode } from '../modes/storage';
@@ -26,7 +26,7 @@ export type ArgonTelemetryRecord = {
 
 export type ArgonBackendPayload = {
   schema_version: 1;
-  source: 'argon_nordic_uart';
+  source: 'smart_mouthguard';
   device_id: string;
   device_name: string;
   device_uptime_ms: number;
@@ -43,7 +43,7 @@ export type ArgonBackendPayload = {
 export function toBackendPayload(record: ArgonTelemetryRecord): ArgonBackendPayload {
   return {
     schema_version: 1,
-    source: 'argon_nordic_uart',
+    source: 'smart_mouthguard',
     device_id: record.deviceId,
     device_name: record.deviceName,
     device_uptime_ms: record.millis,

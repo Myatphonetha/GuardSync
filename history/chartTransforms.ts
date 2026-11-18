@@ -1,5 +1,5 @@
 /**
- * Turns saved Argon samples into bar-chart series and the activity strip.
+ * Turns saved mouthguard samples into bar-chart series and the activity strip.
  * Time labels are relative to the first sample in the loaded window (0s, 12s, …).
  */
 import type { UsageMode } from '../modes/storage';
@@ -52,8 +52,10 @@ export function recordsToHeartRateChart(records: ArgonTelemetryRecord[]): ChartP
 }
 
 export function recordsToSpO2Chart(records: ArgonTelemetryRecord[]): ChartPoint[] {
-  const startMs = sessionStartMs(records);
-  return toSeries(records, startMs, (r) => r.spO2, (v) => v < 92);
+  // 0 means this mouthguard firmware did not send SpO2.
+  const withSensor = records.filter((r) => r.spO2 > 0);
+  const startMs = sessionStartMs(withSensor);
+  return toSeries(withSensor, startMs, (r) => r.spO2, (v) => v < 92);
 }
 
 export function recordsToTemperatureChart(records: ArgonTelemetryRecord[]): ChartPoint[] {
@@ -68,7 +70,7 @@ export function recordsToHeadAccelerationChart(records: ArgonTelemetryRecord[]):
 
 export function recordsToBiteForceChart(records: ArgonTelemetryRecord[]): ChartPoint[] {
   const startMs = sessionStartMs(records);
-  return toSeries(records, startMs, (r) => r.biteForce, (v) => v > 220);
+  return toSeries(records, startMs, (r) => r.biteForce, (v) => (v >= 10 ? v > 220 : v > 1));
 }
 
 export function countByUsageMode(records: ArgonTelemetryRecord[]): Record<string, number> {

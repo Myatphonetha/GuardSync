@@ -1,6 +1,9 @@
 /**
- * Remembers which Argon this phone paired with.
- * Onboarding writes these keys; the Dashboard live stream reads them.
+ * Remembers which mouthguard this phone paired with.
+ *
+ * Written by: app/onboarding.tsx after the first full reading
+ * Read by: useLiveTelemetry.ts when the dashboard opens
+ * Calls next: AsyncStorage
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 

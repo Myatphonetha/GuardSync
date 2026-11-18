@@ -40,3 +40,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# nRF Connect SDK build output
+firmware/**/build/
+
+# Python cache
+__pycache__/

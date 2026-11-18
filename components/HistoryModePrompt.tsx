@@ -1,7 +1,10 @@
+/**
+ * Banner: "Recent stats look like Game — switch?" Yes / Keep.
+ */
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import type { ModeChangeSuggestion } from '../lib/modeChangeSuggestion';
-import { USAGE_MODE_LABELS } from '../lib/usageMode';
+import type { ModeChangeSuggestion } from '../modes/suggestChange';
+import { USAGE_MODE_LABELS } from '../modes/storage';
 import { theme } from '../theme';
 
 type Props = {

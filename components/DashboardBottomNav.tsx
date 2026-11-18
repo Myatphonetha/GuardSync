@@ -1,3 +1,6 @@
+/**
+ * Dashboard / History / parent / trainer tab bar.
+ */
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';

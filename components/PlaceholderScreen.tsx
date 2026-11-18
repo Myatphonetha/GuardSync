@@ -1,3 +1,6 @@
+/**
+ * Shared placeholder for parent/trainer screens that are not fully ported yet.
+ */
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { safeGoBack } from '../lib/safeBack';

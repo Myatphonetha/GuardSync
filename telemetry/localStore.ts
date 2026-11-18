@@ -1,5 +1,5 @@
 /**
- * Saves Argon samples on the phone so History can show charts offline.
+ * Saves mouthguard samples on the phone so History can show charts offline.
  * Latest snapshot + an outbox queue that later uploads to Supabase.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -80,7 +80,7 @@ export function normalizeRecord(json: unknown): ArgonTelemetryRecord | null {
     rawLine: raw.trim(),
     receivedAtMs,
     deviceId: typeof o.deviceId === 'string' ? o.deviceId : '',
-    deviceName: typeof o.deviceName === 'string' ? o.deviceName : 'Argon',
+    deviceName: typeof o.deviceName === 'string' ? o.deviceName : 'Smart Mouthguard',
     usageMode,
     sessionId,
     detectedMode,

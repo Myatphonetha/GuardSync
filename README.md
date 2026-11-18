@@ -1,17 +1,21 @@
-# GuardSync (Expo / Android dev build)
+# GuardSync (Expo / Android)
 
-This folder is the **React Native (Expo)** app. The original Vite web UI lives in the repo root under `src/`; screens here are a **working navigation shell** so you can run on a phone and port UI incrementally.
+React Native companion app for a sensor-embedded mouthguard: BLE telemetry from the Smart Mouthguard (nRF52840), live athlete dashboard, local + Supabase history, and activity-mode prompts.
+
+**How the code is laid out:** [docs/HOW_THE_APP_WORKS.md](docs/HOW_THE_APP_WORKS.md)
+
+**Thesis (USF ETD draft):** [docs/thesis/GuardSync_ETD_draft.docx](docs/thesis/GuardSync_ETD_draft.docx) — formatting notes in [docs/ETD_FORMATTING_NOTES.md](docs/ETD_FORMATTING_NOTES.md)
 
 ## Prerequisites
 
 - Node.js (LTS)
-- Android phone with USB debugging or same Wi‑Fi as your PC (for Metro)
+- Android phone with USB debugging, or same Wi‑Fi as your PC (for Metro)
 - Optional: [EAS CLI](https://docs.expo.dev/build/setup/) for cloud dev builds
 
 ## Install
 
 ```bash
-cd mobile
+cd GuardSync
 npm install
 ```
 
@@ -21,9 +25,9 @@ npm install
 npm start
 ```
 
-Scan the QR code with Expo Go. **Expo Go cannot load custom dev-client-only native code**; use a dev build below for BLE or other native modules later.
+Scan the QR code with Expo Go. **Expo Go cannot load custom native BLE code**; use a development build below to pair the mouthguard.
 
-## Development build (what you asked for)
+## Development build
 
 1. Install EAS and log in:
 
@@ -35,54 +39,52 @@ Scan the QR code with Expo Go. **Expo Go cannot load custom dev-client-only nati
 2. Link the project (first time only):
 
    ```bash
-   cd mobile
+   cd GuardSync
    eas init
    ```
 
-3. Build an **Android development client** (installable APK):
+3. Build an Android development client:
 
    ```bash
    eas build --profile development --platform android
    ```
 
-4. Download and install the APK on your phone.
+4. Install the APK on the phone.
 
-5. Start Metro with the dev client:
+5. Start Metro:
 
    ```bash
    npm run android:dev
    ```
 
-   Open the installed **GuardSync** app; it should connect to Metro.
+   Open the installed **GuardSync** app so it connects to Metro.
 
 ## Stuck on “Loading from 10.x.x.x:8081…” (Android)
 
-Metro can show **Android Bundled** on your PC while the phone never finishes loading. Common cause: **Android blocks plain HTTP** (`http://` to your LAN IP) unless the app allows **cleartext** traffic. This project sets `usesCleartextTraffic: true` via `expo-build-properties` — **you must create a new dev build** (`eas build --profile development --platform android`) and reinstall the APK for that native change.
+Metro can show **Android Bundled** on the PC while the phone never finishes. Android often blocks plain HTTP unless the app allows **cleartext**. This project sets `usesCleartextTraffic: true` via `expo-build-properties` — **rebuild** the dev client and reinstall the APK after that native change.
 
 **Workarounds without rebuilding:**
 
-1. **Tunnel** (often fixes immediately):
+1. Tunnel:
 
    ```bash
    npx expo start --tunnel
    ```
 
-   Open the project using the new URL/QR (HTTPS tunnel, not raw LAN HTTP).
-
-2. **USB + adb reverse** (uses `localhost` instead of the LAN IP):
+2. USB + adb reverse:
 
    ```bash
    adb reverse tcp:8081 tcp:8081
    ```
 
-   Then in the dev client, set the bundler URL to `http://localhost:8081` (dev menu on the device), or restart after scanning if your client picks it up.
+   Then set the bundler URL to `http://localhost:8081` in the device dev menu.
 
 ## Routes
 
-File-based routes under `app/` mirror the web router (`/role`, `/dashboard`, `/calibration-flow`, …). Replace placeholder screens with full layouts ported from `src/app/pages/*.tsx`.
+File-based routes live under `app/` (`/role`, `/dashboard`, `/calibration-flow`, `/usage-mode`, `/history`, …). Supporting logic is in `ble/`, `telemetry/`, `modes/`, and `history/`.
 
 ## Bluetooth
 
-The app uses **`react-native-ble-plx`** for real BLE scanning on the **Onboarding** screen (`app/onboarding.tsx`). After adding or updating this library, **rebuild the dev client** (`eas build --profile development --platform android`) and reinstall the APK so native code is included.
+The app uses **`react-native-ble-plx`** on Onboarding (`app/onboarding.tsx`) and the live Dashboard stream (`ble/useLiveTelemetry.ts`). After adding or updating this library, **rebuild the dev client**.
 
-Android will prompt for **Bluetooth** and **location** (location is often required for BLE discovery on older devices). Turn on Bluetooth and keep the peripheral in pairing/advertising range.
+The board must be advertising as **Smart Mouthguard**. Android will prompt for **Bluetooth** and **location** (location is often required for BLE discovery). The data path is written out in [docs/HOW_THE_APP_WORKS.md](docs/HOW_THE_APP_WORKS.md).

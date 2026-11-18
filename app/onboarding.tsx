@@ -1,3 +1,10 @@
+/**
+ * Scan for the Smart Mouthguard, read one full sensor set, then go to calibration.
+ *
+ * Scan does not filter by service UUID. The chip advertises its name only.
+ * After a tap, stream.ts connects and waits for the heart packet.
+ * Temperature, motion, and bite are kept when those sensors report.
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -9,25 +16,18 @@ import {
   Text,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Device, State } from 'react-native-ble-plx';
 import { router } from 'expo-router';
 import { safeGoBack } from '../lib/safeBack';
-import { bleManager } from '../lib/bleManager';
-import { ensureBlePermissions } from '../lib/blePermissions';
-import {
-  ARGON_DEVICE_NAME,
-  isArgonAdvertisedDevice,
-  NORDIC_UART_SERVICE_UUID,
-} from '../lib/argonNordicUart';
-import { disconnectQuietly, waitForFirstUartLine } from '../lib/argonUartConnect';
-import { persistArgonTelemetryRecord, toBackendPayload } from '../lib/argonTelemetry';
-import { postArgonTelemetry } from '../services/telemetryBackend';
+import { bleManager } from '../ble/bleManager';
+import { ensureBlePermissions } from '../ble/blePermissions';
+import { savePairedDevice } from '../ble/deviceStorage';
+import { isMouthguardDevice, MOUTHGUARD_NAME } from '../ble/protocol';
+import { disconnectQuietly, waitForFirstReading } from '../ble/stream';
+import { persistArgonTelemetryRecord } from '../telemetry/localStore';
+import { toBackendPayload } from '../telemetry/types';
+import { postArgonTelemetry } from '../telemetry/upload';
 import { theme } from '../theme';
-
-const K_CONNECTED = 'guardsync_bt_connected';
-const K_DEVICE = 'guardsync_bt_device_name';
-const K_DEVICE_ID = 'guardsync_bt_device_id';
 
 const SCAN_MS = 20000;
 
@@ -88,10 +88,12 @@ export default function OnboardingScreen() {
 
     setScanning(true);
 
-    // Only devices advertising Nordic UART service (matches Particle `appendServiceUUID`)
+    // null = every nearby device. The chip does not advertise its service UUIDs.
+    // allowDuplicates stays on so a later packet that finally includes the
+    // name "Smart Mouthguard" is not thrown away.
     bleManager.startDeviceScan(
-      [NORDIC_UART_SERVICE_UUID],
-      { allowDuplicates: false },
+      null,
+      { allowDuplicates: true },
       (error, device) => {
         if (error) {
           stopScan();
@@ -99,9 +101,7 @@ export default function OnboardingScreen() {
           return;
         }
         if (!device?.id) return;
-
-        // Nordic UART service filter is applied above; also accept Argon name when present.
-        if (!isArgonAdvertisedDevice(device)) return;
+        if (!isMouthguardDevice(device)) return;
 
         const prev = devicesMap.current.get(device.id);
         if (!prev || (device.rssi ?? -999) > (prev.rssi ?? -999)) {
@@ -122,32 +122,41 @@ export default function OnboardingScreen() {
     setPairing(true);
     stopScan();
     try {
-      const name =
-        device.name ?? device.localName ?? ARGON_DEVICE_NAME;
+      const name = device.name ?? device.localName ?? MOUTHGUARD_NAME;
 
-      const { parsed, raw, connected } = await waitForFirstUartLine(device, 18000);
+      const { reading, connected } = await waitForFirstReading(device, 18000);
 
-      const record = await persistArgonTelemetryRecord({
-        parsed,
-        raw,
-        deviceId: device.id,
-        deviceName: name,
-      });
+      const metricsReady =
+        reading.heartRate != null &&
+        reading.headAcceleration != null &&
+        reading.biteForce != null;
 
-      await AsyncStorage.multiSet([
-        [K_CONNECTED, 'true'],
-        [K_DEVICE, name],
-        [K_DEVICE_ID, device.id],
-      ]);
+      if (metricsReady) {
+        const record = await persistArgonTelemetryRecord({
+          parsed: {
+            millis: reading.millis,
+            activeMinutes: reading.activeMinutes,
+            headAcceleration: reading.headAcceleration ?? 0,
+            heartRate: reading.heartRate ?? 0,
+            spO2: reading.spO2 ?? 0,
+            bodyTempF: reading.bodyTempF ?? 0,
+            biteForce: reading.biteForce ?? 0,
+          },
+          raw: reading.raw,
+          deviceId: device.id,
+          deviceName: name,
+        });
+        void postArgonTelemetry(toBackendPayload(record)).catch(() => {});
+      }
 
-      void postArgonTelemetry(toBackendPayload(record)).catch(() => {});
+      await savePairedDevice(device.id, name);
 
       await disconnectQuietly(connected);
 
       router.push('/calibration-flow');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      Alert.alert('Could not read UART', msg);
+      Alert.alert('Could not read the mouthguard', msg);
     } finally {
       setPairing(false);
     }
@@ -161,21 +170,17 @@ export default function OnboardingScreen() {
         parsed: {
           millis: 0,
           activeMinutes: 0,
-          headAcceleration: 95,
-          heartRate: 72,
-          spO2: 98,
-          bodyTempF: 98.4,
-          biteForce: 160,
+          headAcceleration: 1,
+          heartRate: 70,
+          spO2: 0,
+          bodyTempF: 98.6,
+          biteForce: 0.2,
         },
-        raw: '0,0,95,72,98,98.4,160',
+        raw: '0,0,1,70,0,98.6,0.2',
         deviceId: 'demo',
-        deviceName: 'Argon (demo)',
+        deviceName: 'Smart Mouthguard (demo)',
       });
-      await AsyncStorage.multiSet([
-        [K_CONNECTED, 'true'],
-        [K_DEVICE, 'Argon (demo)'],
-        [K_DEVICE_ID, 'demo'],
-      ]);
+      await savePairedDevice('demo', 'Smart Mouthguard (demo)');
       void postArgonTelemetry(toBackendPayload(record)).catch(() => {});
       router.push('/calibration-flow');
     } finally {
@@ -191,11 +196,11 @@ export default function OnboardingScreen() {
         <Text style={styles.backText}>←</Text>
       </Pressable>
 
-      <Text style={styles.title}>Connect Argon (Nordic UART)</Text>
+      <Text style={styles.title}>Connect Smart Mouthguard</Text>
       <Text style={styles.sub}>
-        Scans for the Nordic UART service UUID from Particle firmware. The device may show as
-        &quot;Argon&quot; or unnamed until scan response. After you tap a device, the app connects and reads
-        one telemetry line from the TX notify characteristic ({NORDIC_UART_SERVICE_UUID.slice(0, 8)}…).
+        Looks for a device named Smart Mouthguard. After you tap it, the app connects and waits
+        for heart rate, temperature, motion, and bite force. The chip sends those about once a second
+        while the phone is connected.
       </Text>
 
       <View style={styles.statusRow}>
@@ -220,7 +225,7 @@ export default function OnboardingScreen() {
             <Text style={styles.primaryText}> Scanning… ({Math.round(SCAN_MS / 1000)}s)</Text>
           </View>
         ) : (
-          <Text style={styles.primaryText}>Scan for Argon</Text>
+          <Text style={styles.primaryText}>Scan for mouthguard</Text>
         )}
       </Pressable>
 
@@ -237,12 +242,12 @@ export default function OnboardingScreen() {
         ListEmptyComponent={
           <Text style={styles.empty}>
             {scanning
-              ? 'Looking for Argon (Nordic UART)…'
-              : 'No Argon found. Power the Argon (not in setup/listening mode), confirm Nordic UART advertising in firmware, and try again.'}
+              ? 'Looking for Smart Mouthguard…'
+              : 'No mouthguard yet. Power the board, wait until it prints Advertising, then scan again.'}
           </Text>
         }
         renderItem={({ item }) => {
-          const label = item.name ?? item.localName ?? 'Argon';
+          const label = item.name ?? item.localName ?? MOUTHGUARD_NAME;
           return (
             <Pressable
               style={({ pressed }) => [styles.deviceRow, pressed && styles.deviceRowPressed]}
@@ -251,7 +256,7 @@ export default function OnboardingScreen() {
             >
               <Text style={styles.deviceName}>{label}</Text>
               <Text style={styles.deviceMeta}>
-                Nordic UART · RSSI {item.rssi ?? '—'}
+                Smart Mouthguard · RSSI {item.rssi ?? '—'}
               </Text>
             </Pressable>
           );
@@ -259,7 +264,7 @@ export default function OnboardingScreen() {
       />
 
       <Pressable style={[styles.secondary, pairing && styles.disabled]} disabled={pairing} onPress={simulatePair}>
-        <Text style={styles.secondaryText}>Skip (demo — no Argon)</Text>
+        <Text style={styles.secondaryText}>Skip (demo — no mouthguard)</Text>
       </Pressable>
     </View>
   );

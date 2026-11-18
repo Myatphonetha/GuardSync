@@ -1,3 +1,6 @@
+/**
+ * One metric tile on the athlete dashboard (heart rate, bite force, …).
+ */
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../theme';

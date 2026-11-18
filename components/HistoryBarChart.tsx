@@ -1,5 +1,8 @@
+/**
+ * Simple bar chart for History metrics. Red bars = above the safety threshold.
+ */
 import { StyleSheet, Text, View } from 'react-native';
-import type { ChartPoint } from '../lib/historyChartData';
+import type { ChartPoint } from '../history/chartConfig';
 import { theme } from '../theme';
 
 const CHART_HEIGHT = 168;

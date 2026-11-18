@@ -2,7 +2,7 @@
  * Builds the History timeline: local phone samples first, then cloud rows.
  * Cloud calls time out so a slow network cannot freeze the screen.
  */
-import { parseArgonUartLine } from '../ble/nordicUart';
+import { parseStoredLine } from '../ble/protocol';
 import { supabase } from '../lib/supabase';
 import { isModeSource, isUsageMode, type UsageMode } from '../modes/storage';
 import {
@@ -60,7 +60,7 @@ function rowToRecord(row: TelemetryRow): ArgonTelemetryRecord | null {
   const detectedMode = isUsageMode(row.detected_mode) ? row.detected_mode : null;
   const modeSource = isModeSource(row.mode_source) ? row.mode_source : 'manual';
 
-  const parsed = parseArgonUartLine(row.csv_raw);
+  const parsed = parseStoredLine(row.csv_raw);
   if (parsed) {
     return {
       schemaVersion: 1,

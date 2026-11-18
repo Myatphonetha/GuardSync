@@ -1,3 +1,6 @@
+/**
+ * White card wrapper around a History bar chart (title, subtitle, optional badge).
+ */
 import { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';

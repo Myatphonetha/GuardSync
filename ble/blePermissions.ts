@@ -1,6 +1,9 @@
 /**
- * Asks Android for Bluetooth scan/connect (and location on older APIs).
- * iOS prompts come from Info.plist when BleManager starts.
+ * Ask Android before a scan or a connect. Returns false if the athlete says no.
+ * iOS asks from Info.plist when bleManager.ts starts.
+ *
+ * Called by: app/onboarding.tsx, useLiveTelemetry.ts
+ * Calls next: the system permission dialog
  */
 import { PermissionsAndroid, Platform } from 'react-native';
 

@@ -1,3 +1,6 @@
+/**
+ * Athlete dashboard: live BLE metrics, activity pills, and optional mode-switch prompt.
+ */
 import { type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -5,20 +8,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { DashboardBottomNav } from '../components/DashboardBottomNav';
 import { DashboardMetricCard } from '../components/DashboardMetricCard';
 import { HistoryModePrompt } from '../components/HistoryModePrompt';
-import { useArgonLiveTelemetry } from '../hooks/useArgonLiveTelemetry';
-import { useUsageModeChangePrompt } from '../hooks/useUsageModeChangePrompt';
-import { useUsageModeDetection } from '../hooks/useUsageModeDetection';
-import { USAGE_MODE_LABELS, USAGE_MODES, type UsageMode } from '../lib/usageMode';
+import { useLiveTelemetry } from '../ble/useLiveTelemetry';
+import { useModeChangePrompt } from '../modes/useModeChangePrompt';
+import { useUsageMode } from '../modes/useUsageMode';
+import { USAGE_MODE_LABELS, USAGE_MODES, type UsageMode } from '../modes/storage';
 import { theme } from '../theme';
 
-function formatActiveMinutes(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  if (h > 0) return `${h}H ${m}M`;
-  return `${m}M`;
-}
-
-function concussionRisk(headAccel: number): { label: string; color: string } {
+function concussionRisk(headAccel: number | null): { label: string; color: string } {
+  if (headAccel == null) return { label: '—', color: theme.muted };
   if (headAccel >= 120) return { label: 'High', color: theme.danger };
   if (headAccel >= 90) return { label: 'Moderate', color: theme.warning };
   return { label: 'Low', color: theme.primary };
@@ -45,15 +42,23 @@ function zoneTemp(t: number): string {
 }
 
 function zoneBite(n: number): string {
-  if (n > 300) return theme.danger;
-  if (n >= 250) return theme.warning;
-  if (n >= 200) return theme.warning;
+  // Current firmware force is about 0–1.2. Older saved samples used whole Newtons.
+  if (n >= 10) {
+    if (n > 300) return theme.danger;
+    if (n >= 200) return theme.warning;
+    return theme.primary;
+  }
+  if (n > 1) return theme.danger;
+  if (n >= 0.6) return theme.warning;
   return theme.primary;
+}
+
+function formatBite(n: number): string {
+  return n >= 10 ? `${Math.round(n)} N` : `${n.toFixed(2)} N`;
 }
 
 type MetricKey =
   | 'sport'
-  | 'activeMinutes'
   | 'headAccel'
   | 'concussionRisk'
   | 'heartRate'
@@ -62,49 +67,41 @@ type MetricKey =
   | 'biteForce';
 
 const MODE_CARD_ORDER: Record<UsageMode, MetricKey[]> = {
-  game: ['headAccel', 'concussionRisk', 'biteForce', 'heartRate', 'activeMinutes', 'spO2', 'bodyTemp', 'sport'],
-  training: ['activeMinutes', 'heartRate', 'headAccel', 'concussionRisk', 'spO2', 'bodyTemp', 'biteForce', 'sport'],
-  sleep: ['heartRate', 'spO2', 'bodyTemp', 'activeMinutes', 'headAccel', 'concussionRisk', 'biteForce', 'sport'],
+  game: ['headAccel', 'concussionRisk', 'biteForce', 'heartRate', 'spO2', 'bodyTemp', 'sport'],
+  training: ['heartRate', 'headAccel', 'concussionRisk', 'spO2', 'bodyTemp', 'biteForce', 'sport'],
+  sleep: ['heartRate', 'spO2', 'bodyTemp', 'headAccel', 'concussionRisk', 'biteForce', 'sport'],
 };
 
 export default function DashboardScreen() {
   const {
     connected,
     streamLive,
-    activeMinutes,
+    streamError,
     headAccel,
     heartRate,
     spO2,
     bodyTemp,
     biteForce,
-  } = useArgonLiveTelemetry();
+  } = useLiveTelemetry();
 
-  const { usageMode, selectMode } = useUsageModeDetection(streamLive);
+  const { usageMode, selectMode } = useUsageMode(streamLive);
 
-  const { suggestion, confirming, confirmModeChange, dismissModeChange } = useUsageModeChangePrompt(
+  const { suggestion, confirming, confirmModeChange, dismissModeChange } = useModeChangePrompt(
     connected,
     (mode) => void selectMode(mode),
   );
 
   const risk = concussionRisk(headAccel);
-  const statusLabel = streamLive ? 'Connected' : connected ? 'Connected' : 'Not paired';
-  const statusColor = connected ? theme.primary : theme.muted;
+  const statusLabel = streamLive ? 'Live' : connected ? 'Paired' : 'Not paired';
+  const statusColor = streamLive || connected ? theme.primary : theme.muted;
 
   const cards: Record<MetricKey, ReactNode> = {
     sport: <DashboardMetricCard key="sport" label="Sport" value="Football" icon="run" />,
-    activeMinutes: (
-      <DashboardMetricCard
-        key="activeMinutes"
-        label="Active Minutes"
-        value={formatActiveMinutes(activeMinutes)}
-        icon="timer-sand"
-      />
-    ),
     headAccel: (
       <DashboardMetricCard
         key="headAccel"
         label="Head Acceleration"
-        value={`${headAccel}g`}
+        value={headAccel == null ? '—' : `${headAccel.toFixed(1)}g`}
         icon="football-helmet"
       />
     ),
@@ -122,8 +119,8 @@ export default function DashboardScreen() {
       <DashboardMetricCard
         key="heartRate"
         label="Heart Rate"
-        value={`${heartRate} BPM`}
-        valueColor={zoneHr(heartRate)}
+        value={heartRate == null ? '—' : `${heartRate} BPM`}
+        valueColor={heartRate == null ? theme.muted : zoneHr(heartRate)}
         icon="heart-pulse"
       />
     ),
@@ -131,8 +128,8 @@ export default function DashboardScreen() {
       <DashboardMetricCard
         key="spO2"
         label="SpO2"
-        value={`${spO2}%`}
-        valueColor={zoneSpo2(spO2)}
+        value={spO2 == null || spO2 <= 0 ? '—' : `${spO2}%`}
+        valueColor={spO2 == null || spO2 <= 0 ? theme.muted : zoneSpo2(spO2)}
         icon="molecule-co2"
       />
     ),
@@ -140,8 +137,8 @@ export default function DashboardScreen() {
       <DashboardMetricCard
         key="bodyTemp"
         label="Body Temperature"
-        value={`${bodyTemp.toFixed(1)} °F`}
-        valueColor={zoneTemp(bodyTemp)}
+        value={bodyTemp == null ? '—' : `${bodyTemp.toFixed(1)} °F`}
+        valueColor={bodyTemp == null ? theme.muted : zoneTemp(bodyTemp)}
         icon="thermometer"
       />
     ),
@@ -149,8 +146,8 @@ export default function DashboardScreen() {
       <DashboardMetricCard
         key="biteForce"
         label="Bite Force"
-        value={`${biteForce} N`}
-        valueColor={zoneBite(biteForce)}
+        value={biteForce == null ? '—' : formatBite(biteForce)}
+        valueColor={biteForce == null ? theme.muted : zoneBite(biteForce)}
         icon="tooth"
       />
     ),
@@ -191,6 +188,8 @@ export default function DashboardScreen() {
             </View>
           </View>
 
+          {streamError ? <Text style={styles.streamError}>{streamError}</Text> : null}
+
           {suggestion ? (
             <HistoryModePrompt
               suggestion={suggestion}
@@ -222,7 +221,7 @@ export default function DashboardScreen() {
               })}
             </View>
             <Text style={styles.modeHint}>
-              Set after calibration when you pair Argon. You will be asked here if live stats suggest a different activity.
+              Pick this after you pair the mouthguard. If live stats look like a different activity, the app will ask before switching.
             </Text>
           </View>
 
@@ -293,6 +292,12 @@ const styles = StyleSheet.create({
   },
   statusValue: {
     fontWeight: '700',
+  },
+  streamError: {
+    fontSize: 13,
+    color: theme.danger,
+    lineHeight: 18,
+    marginBottom: 12,
   },
   modeSection: {
     marginBottom: 16,
